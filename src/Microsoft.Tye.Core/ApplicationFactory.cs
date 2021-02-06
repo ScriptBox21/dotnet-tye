@@ -30,18 +30,18 @@ namespace Microsoft.Tye
             var rootConfig = ConfigFactory.FromFile(source);
             rootConfig.Validate();
 
-            var root = new ApplicationBuilder(source, rootConfig.Name!);
-            root.Namespace = rootConfig.Namespace;
+            var root = new ApplicationBuilder(source, rootConfig.Name!)
+            {
+                Namespace = rootConfig.Namespace
+            };
 
             queue.Enqueue((rootConfig, new HashSet<string>()));
 
-            while (queue.Count > 0)
+            while (queue.TryDequeue(out var item))
             {
-                var item = queue.Dequeue();
-                var config = item.Item1;
-
                 // dependencies represents a set of all dependencies
-                var dependencies = item.Item2;
+                var (config, dependencies) = item;
+
                 if (!visited.Add(config.Source.FullName))
                 {
                     continue;
@@ -516,16 +516,17 @@ namespace Microsoft.Tye
 
             output.WriteDebugLine("Restoring and evaluating projects");
 
+            var projectEvaluationTargets = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ProjectEvaluation.targets");
             var msbuildEvaluationResult = await ProcessUtil.RunAsync(
                 "dotnet",
                 $"build " +
                     $"\"{projectPath}\" " +
                     // CustomAfterMicrosoftCommonTargets is imported by non-crosstargeting (single TFM) projects
-                    $"/p:CustomAfterMicrosoftCommonTargets={Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ProjectEvaluation.targets")} " +
+                    @$"/p:CustomAfterMicrosoftCommonTargets=""{projectEvaluationTargets}"" " +
                     // CustomAfterMicrosoftCommonCrossTargetingTargets is imported by crosstargeting (multi-TFM) projects
                     // This ensures projects properties are evaluated correctly. However, multi-TFM projects must specify
                     // a specific TFM to build/run/publish and will otherwise throw an exception.
-                    $"/p:CustomAfterMicrosoftCommonCrossTargetingTargets={Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ProjectEvaluation.targets")} " +
+                    @$"/p:CustomAfterMicrosoftCommonCrossTargetingTargets=""{projectEvaluationTargets}"" " +
                     $"/nologo",
                 throwOnError: false,
                 workingDirectory: directory.DirectoryPath);
@@ -535,9 +536,9 @@ namespace Microsoft.Tye
             // running these targets we don't really care as long as we get the data.
             if (msbuildEvaluationResult.ExitCode != 0)
             {
-                output.WriteDebugLine($"Evaluating project failed with exit code {msbuildEvaluationResult.ExitCode}:" +
-                    $"{Environment.NewLine}Ouptut: {msbuildEvaluationResult.StandardOutput}" +
-                    $"{Environment.NewLine}Error: {msbuildEvaluationResult.StandardError}");
+                output.WriteInfoLine($"Evaluating project failed with exit code {msbuildEvaluationResult.ExitCode}");
+                output.WriteDebugLine($"Ouptut: {msbuildEvaluationResult.StandardOutput}");
+                output.WriteDebugLine($"Error: {msbuildEvaluationResult.StandardError}");
             }
 
             return msbuildEvaluationResult;
