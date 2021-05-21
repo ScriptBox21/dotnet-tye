@@ -30,7 +30,7 @@ namespace Microsoft.Tye
             var rootConfig = ConfigFactory.FromFile(source);
             rootConfig.Validate();
 
-            var root = new ApplicationBuilder(source, rootConfig.Name!)
+            var root = new ApplicationBuilder(source, rootConfig.Name!, new ContainerEngine(rootConfig.ContainerEngineType))
             {
                 Namespace = rootConfig.Namespace
             };
@@ -267,13 +267,13 @@ namespace Microsoft.Tye
                     else if (!string.IsNullOrEmpty(configService.Repository))
                     {
                         // clone to .tye folder
-                        var path = configService.CloneDirectory ?? Path.Join(rootConfig.Source.DirectoryName, ".tye", "deps");
+                        var path = configService.CloneDirectory ?? Path.Join(".tye", "deps");
                         if (!Directory.Exists(path))
                         {
                             Directory.CreateDirectory(path);
                         }
 
-                        var clonePath = Path.Combine(path, configService.Name);
+                        var clonePath = Path.Combine(rootConfig.Source.DirectoryName!, path, configService.Name);
 
                         if (!Directory.Exists(clonePath))
                         {
@@ -282,7 +282,7 @@ namespace Microsoft.Tye
                                 throw new CommandException($"Cannot clone repository {configService.Repository} because git is not installed. Please install git if you'd like to use \"repository\" in tye.yaml.");
                             }
 
-                            var result = await ProcessUtil.RunAsync("git", $"clone {configService.Repository} \"{clonePath}\"", workingDirectory: path, throwOnError: false);
+                            var result = await ProcessUtil.RunAsync("git", $"clone {configService.Repository} \"{clonePath}\"", workingDirectory: rootConfig.Source.DirectoryName, throwOnError: false);
 
                             if (result.ExitCode != 0)
                             {
@@ -519,7 +519,7 @@ namespace Microsoft.Tye
             var projectEvaluationTargets = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ProjectEvaluation.targets");
             var msbuildEvaluationResult = await ProcessUtil.RunAsync(
                 "dotnet",
-                $"build " +
+                $"build  --no-restore " +
                     $"\"{projectPath}\" " +
                     // CustomAfterMicrosoftCommonTargets is imported by non-crosstargeting (single TFM) projects
                     @$"/p:CustomAfterMicrosoftCommonTargets=""{projectEvaluationTargets}"" " +

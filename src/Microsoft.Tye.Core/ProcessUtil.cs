@@ -23,6 +23,17 @@ namespace Microsoft.Tye
 
         private static readonly bool IsWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
+        public static Task<int> ExecuteAsync(
+            string command,
+            string args,
+            string? workingDir = null,
+            Action<string>? stdOut = null,
+            Action<string>? stdErr = null,
+            params (string key, string value)[] environmentVariables)
+        {
+            return System.CommandLine.Invocation.Process.ExecuteAsync(command, args, workingDir, stdOut, stdErr, environmentVariables);
+        }
+
         public static async Task<ProcessResult> RunAsync(
             string filename,
             string arguments,
@@ -103,9 +114,13 @@ namespace Microsoft.Tye
 
             process.Exited += (_, e) =>
             {
+                // Even though the Exited event has been raised, WaitForExit() must still be called to ensure the output buffers
+                // have been flushed before the process is considered completely done.
+                process.WaitForExit();
+
                 if (throwOnError && process.ExitCode != 0)
                 {
-                    processLifetimeTask.TrySetException(new InvalidOperationException($"Command {filename} {arguments} returned exit code {process.ExitCode}"));
+                    processLifetimeTask.TrySetException(new InvalidOperationException($"Command {filename} {arguments} returned exit code {process.ExitCode}. Standard error: \"{errorBuilder.ToString()}\""));
                 }
                 else
                 {
